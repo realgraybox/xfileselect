@@ -20,7 +20,6 @@
  * 3. This notice may not be removed or altered from any source distribution.
  */
 // xfileselect.c
-
 #include "xfileselect.h"
 
 #include <X11/Xlib.h>
@@ -32,13 +31,15 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#ifndef _POSIX_C_SOURCE
-char *strdup(const char *s) {
-    char *d = malloc(strlen(s) + 1);
-    if (d) strcpy(d, s);
+static char *fc_strdup(const char *s)  {
+    size_t n = strlen(s) + 1;
+    char *d = malloc(n);
+
+    if (d)
+        memcpy(d, s, n);
+
     return d;
 }
-#endif
 
 // ----------------------------
 // Visual / behavior configuration
@@ -54,55 +55,55 @@ char *strdup(const char *s) {
 #endif
 
 #ifndef FC_FONT_NAME
-#define FC_FONT_NAME            "fixed"		//fixed
+#define FC_FONT_NAME            "fixed"
 #endif
 
 // Colors (as hex strings for parsing)
 #ifndef FC_HEADER_BG_COLOR
-#define FC_HEADER_BG_COLOR      "0x222222"
+#define FC_HEADER_BG_COLOR      "#222222"
 #endif
 
 #ifndef FC_HEADER_FG_COLOR
-#define FC_HEADER_FG_COLOR      "0xffffff"		//"0x444444"
+#define FC_HEADER_FG_COLOR      "#ffffff"
 #endif
 
-#ifndef FC_LIST_BG_COLOR		 
-#define FC_LIST_BG_COLOR        "0x222222"
+#ifndef FC_LIST_BG_COLOR
+#define FC_LIST_BG_COLOR        "#222222"
 #endif
 
 #ifndef FC_LIST_FG_COLOR
-#define FC_LIST_FG_COLOR        "0x444444"
+#define FC_LIST_FG_COLOR        "#444444"
 #endif
 
 #ifndef FC_LIST_SEL_BG_COLOR
-#define FC_LIST_SEL_BG_COLOR    "0x444444"
+#define FC_LIST_SEL_BG_COLOR    "#444444"
 #endif
 
 #ifndef FC_LIST_SEL_FG_COLOR
-#define FC_LIST_SEL_FG_COLOR    "0xffffff"
+#define FC_LIST_SEL_FG_COLOR    "#ffffff"
 #endif
 
 #ifndef FC_STATUS_BG_COLOR
-#define FC_STATUS_BG_COLOR      "0x222222"
+#define FC_STATUS_BG_COLOR      "#222222"
 #endif
 
 #ifndef FC_STATUS_FG_COLOR
-#define FC_STATUS_FG_COLOR      "0xffffff"
+#define FC_STATUS_FG_COLOR      "#ffffff"
 #endif
 
 #ifndef FC_SEPARATOR_COLOR
-#define FC_SEPARATOR_COLOR      "0x444444"
-#endif
-
-#ifndef FC_STATUS_PADDING_Y
-#define FC_STATUS_PADDING_Y     4	//distance below text in header
+#define FC_SEPARATOR_COLOR      "#444444"
 #endif
 
 #ifndef FC_HEADER_PADDING_Y
 #define FC_HEADER_PADDING_Y     4
 #endif
 
-#ifndef FC_LINE_EXTRA	
+#ifndef FC_STATUS_PADDING_Y
+#define FC_STATUS_PADDING_Y     4
+#endif
+
+#ifndef FC_LINE_EXTRA
 #define FC_LINE_EXTRA           2	//not used
 #endif
 
@@ -118,14 +119,6 @@ char *strdup(const char *s) {
 #define FC_DEFAULT_HELP_TEXT \
     "[q/Esc]: Cancel [Arrows]: Scroll [Enter]: Select [Click]: Move/Select"
 #endif
-
-// Colors (pixels). These are set at runtime using BlackPixel/WhitePixel
-// by default, but you can override with any Pixel value via #define if you
-// create a wrapper that sets them after opening the display.
-// For simplicity, we keep them as expressions using fc->dpy and screen.
-// If you need fixed colors, you can change the init code instead.
-
-// ----------------------------
 
 #define MAX_FILES 1024
 
@@ -169,12 +162,14 @@ typedef struct {
     int canceled;
 } FCContext;
 
+static unsigned long fc_alloc_color(Display *dpy, int screen,
+                                    const char *spec,
+                                    unsigned long fallback);
 static int compare_files(const void *a, const void *b);
 static int matches_filter(FCContext *fc, const char *name, struct stat *st);
 static int fc_init(FCContext *fc, const char *start_path,
                    const char *title, const char *header_text,
                    const char *filter_ext, FCMode mode, const char *help_text);
-
 static void fc_load_files(FCContext *fc, const char *path);
 static void fc_draw(FCContext *fc);
 static void fc_handle_key(FCContext *fc, XKeyEvent *ev);
@@ -182,6 +177,30 @@ static void fc_handle_click(FCContext *fc, XButtonEvent *ev);
 static void fc_run(FCContext *fc);
 static void fc_cleanup(FCContext *fc);
 static void fc_set_window_icon(Display *dpy, Window win);
+
+
+
+static unsigned long fc_alloc_color(Display *dpy, int screen,
+                                    const char *spec,
+                                    unsigned long fallback)
+{
+    XColor color;
+    Colormap cmap = DefaultColormap(dpy, screen);
+
+    if (XParseColor(dpy, cmap, spec, &color) &&
+        XAllocColor(dpy, cmap, &color)) {
+        return color.pixel;
+    }
+
+    fprintf(stderr, "xfileselect: cannot allocate color %s\n", spec);
+    return fallback;
+}
+
+static int compare_files(const void *a, const void *b) {
+    const char *fa = *(const char **)a;
+    const char *fb = *(const char **)b;
+    return strcoll(fa, fb);
+}
 
 static void fc_set_window_icon(Display *dpy, Window win) {
 	unsigned long icon_data[] = {
@@ -202,39 +221,6 @@ static void fc_set_window_icon(Display *dpy, Window win) {
     Atom cardinal = XInternAtom(dpy, "CARDINAL", False);
     XChangeProperty(dpy, win, wm_icon, cardinal, 32, PropModeReplace, (unsigned char*)icon_data, data_length);
     XFlush(dpy); 
-}
-
-static unsigned long parse_color(Display *dpy, int screen, const char *hex) {
-    XColor color;
-    Colormap cmap = DefaultColormap(dpy, screen);
-
-    // Accept "0xRRGGBB" or "#RRGGBB"
-    if (hex[0] == '0' && hex[1] == 'x') {
-        hex += 2;
-    } else if (hex[0] == '#') {
-        hex += 1;
-    }
-
-    if (strlen(hex) != 6) {
-        // Fallback to white
-        return WhitePixel(dpy, screen);
-    }
-
-    char spec[8];
-    snprintf(spec, sizeof(spec), "#%s", hex);
-
-    if (XAllocNamedColor(dpy, cmap, spec, &color, &color) == 0) {
-        // Fallback
-        return WhitePixel(dpy, screen);
-    }
-
-    return color.pixel;
-}
-
-static int compare_files(const void *a, const void *b) {
-    const char *fa = *(const char **)a;
-    const char *fb = *(const char **)b;
-    return strcoll(fa, fb);
 }
 
 static int matches_filter(FCContext *fc, const char *name, struct stat *st) {
@@ -302,15 +288,38 @@ static int fc_init(FCContext *fc, const char *start_path,
 
     fc->gc = XCreateGC(fc->dpy, fc->win, 0, NULL);
 
-    // Allocate colors
-	fc->header_bg   = parse_color(fc->dpy, screen, FC_HEADER_BG_COLOR);
-	fc->header_fg   = parse_color(fc->dpy, screen, FC_HEADER_FG_COLOR);
-	fc->list_bg     = parse_color(fc->dpy, screen, FC_LIST_BG_COLOR);
-	fc->list_fg     = parse_color(fc->dpy, screen, FC_LIST_FG_COLOR);
-	fc->list_sel_bg = parse_color(fc->dpy, screen, FC_LIST_SEL_BG_COLOR);
-	fc->list_sel_fg = parse_color(fc->dpy, screen, FC_LIST_SEL_FG_COLOR);
-	fc->status_bg   = parse_color(fc->dpy, screen, FC_STATUS_BG_COLOR);
-	fc->status_fg   = parse_color(fc->dpy, screen, FC_STATUS_FG_COLOR);
+	fc->header_bg     = fc_alloc_color(fc->dpy, screen,
+                             FC_HEADER_BG_COLOR,
+                             WhitePixel(fc->dpy, screen));
+	
+	fc->header_fg     = fc_alloc_color(fc->dpy, screen,
+                             FC_HEADER_FG_COLOR,
+                             BlackPixel(fc->dpy, screen));
+	
+	fc->list_bg     = fc_alloc_color(fc->dpy, screen,
+                             FC_LIST_BG_COLOR,
+                             WhitePixel(fc->dpy, screen));
+	
+	fc->list_fg     = fc_alloc_color(fc->dpy, screen,
+                             FC_LIST_FG_COLOR,
+                             BlackPixel(fc->dpy, screen));
+
+	fc->list_sel_bg     = fc_alloc_color(fc->dpy, screen,
+                             FC_LIST_SEL_BG_COLOR,
+                             BlackPixel(fc->dpy, screen));
+	
+	fc->list_sel_fg     = fc_alloc_color(fc->dpy, screen,
+                             FC_LIST_SEL_FG_COLOR,
+                             BlackPixel(fc->dpy, screen));
+	
+	fc->status_bg     = fc_alloc_color(fc->dpy, screen,
+                             FC_STATUS_BG_COLOR,
+                             BlackPixel(fc->dpy, screen));
+	
+
+	fc->status_fg     = fc_alloc_color(fc->dpy, screen,
+                             FC_STATUS_FG_COLOR,
+                             BlackPixel(fc->dpy, screen));
 
     fc->font = XLoadQueryFont(fc->dpy, FC_FONT_NAME);
     if (fc->font) {
@@ -319,7 +328,7 @@ static int fc_init(FCContext *fc, const char *start_path,
     } else {
         fc->line_height = 14;
     }
-    
+
     if (filter_ext) {
         strncpy(fc->filter_list, filter_ext, sizeof(fc->filter_list) - 1);
         fc->filter_list[sizeof(fc->filter_list) - 1] = '\0';
@@ -372,7 +381,7 @@ static void fc_load_files(FCContext *fc, const char *path) {
     for (int i = 0; i < fc->file_count; i++) free(fc->files[i]);
     fc->file_count = 0;
 
-    fc->files[fc->file_count++] = strdup("..");
+    fc->files[fc->file_count++] = fc_strdup("..");
 
     struct dirent *entry;
     while ((entry = readdir(dir)) && fc->file_count < MAX_FILES) {
@@ -389,7 +398,7 @@ static void fc_load_files(FCContext *fc, const char *path) {
             }
         }
 
-        fc->files[fc->file_count++] = strdup(entry->d_name);
+        fc->files[fc->file_count++] = fc_strdup(entry->d_name);
     }
 
     closedir(dir);
@@ -434,10 +443,7 @@ static void fc_draw(FCContext *fc) {
         if (fc->selected >= fc->file_count)
             fc->selected = fc->file_count - 1;
     }
-	
-	unsigned long sep_color = parse_color(fc->dpy,
-                                          DefaultScreen(fc->dpy),
-                                          FC_SEPARATOR_COLOR);
+
     // Draw header (if any)
     if (header_height > 0) {
         XSetForeground(fc->dpy, fc->gc, fc->header_bg);
@@ -447,12 +453,6 @@ static void fc_draw(FCContext *fc) {
         XDrawString(fc->dpy, fc->win, fc->gc,
                     10, line_height + 2,
                     fc->header_text, strlen(fc->header_text));
-
-        // Separator between header and file area
-        XSetForeground(fc->dpy, fc->gc, sep_color);
-        XFillRectangle(fc->dpy, fc->win, fc->gc,
-                       0, header_height - 1, fc->width, 1);           
-        
     }
 
     int list_y_start = header_height;
@@ -499,14 +499,10 @@ static void fc_draw(FCContext *fc) {
                     FC_INFO_TEXT_X, y,
                     info, strlen(info));
     }
-    
-    // Separator between file area and status
-    int status_y = fc->height - status_line_height;
-    XSetForeground(fc->dpy, fc->gc, sep_color);
-    XFillRectangle(fc->dpy, fc->win, fc->gc,
-                   0, status_y - 1, fc->width, 1);
 
     // Draw status line
+    int status_y = fc->height - status_line_height;
+
     XSetForeground(fc->dpy, fc->gc, fc->status_bg);
     XFillRectangle(fc->dpy, fc->win, fc->gc,
                    0, status_y, fc->width, status_line_height);
@@ -722,7 +718,7 @@ char *x11_filechooser(const char *start_path,
 
     char *result = NULL;
     if (!fc.canceled && fc.result_path[0] != '\0') {
-        result = strdup(fc.result_path);
+        result = fc_strdup(fc.result_path);
     }
 
     fc_cleanup(&fc);
@@ -735,7 +731,7 @@ int main(void) {
         NULL,
         "Filemanager",
         "Select a file",      // header_text
-        ".mid,.midi,.cmf",
+        NULL,
         FC_MODE_FILE,
         NULL
     );
@@ -748,3 +744,4 @@ int main(void) {
     return 0;
 }
 #endif
+
