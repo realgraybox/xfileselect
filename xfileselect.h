@@ -20,8 +20,42 @@
  * 3. This notice may not be removed or altered from any source distribution.
  */
 // xfileselect.h
-#ifndef FILEMANAGER_XLIB_H
-#define FILEMANAGER_XLIB_H
+#ifndef XFILESELECT_H
+#define XFILESELECT_H
+
+/*
+ * xfileselect – tiny X11 file/directory chooser
+ *
+ * Usage:
+ *   In exactly one .c file of your project, before including this header,
+ *   optionally override visual defaults:
+ *
+ *     #define FC_DEFAULT_WIDTH   400
+ *     #define FC_DEFAULT_HEIGHT  500
+ *     #define FC_FONT_NAME       "fixed"
+ *
+ *     // Colors must be in X11 "#RRGGBB" format (e.g. "#222222").
+ *     #define FC_HEADER_BG_COLOR      "#222222"
+ *     #define FC_HEADER_FG_COLOR      "#444444"
+ *     #define FC_LIST_BG_COLOR        "#222222"
+ *     #define FC_LIST_FG_COLOR        "#444444"
+ *     #define FC_LIST_SEL_BG_COLOR    "#444444"
+ *     #define FC_LIST_SEL_FG_COLOR    "#ffffff"
+ *     #define FC_STATUS_BG_COLOR      "#222222"
+ *     #define FC_STATUS_FG_COLOR      "#444444"
+ *     #define FC_SEPARATOR_COLOR      "#444444"
+ *
+ *   Then include the implementation once:
+ *
+ *     #include "filemanager_xlib.c"
+ *
+ *   Other files should just #include "filemanager_xlib.h".
+ *
+ * Colors:
+ *   All FC_*_COLOR defines are parsed with XParseColor/XAllocColor and
+ *   must be in X11 string format: "#RRGGBB" (e.g. "#222222").
+ *   Using "0xRRGGBB" or other formats is not supported.
+ */
 
 typedef enum {
     FC_MODE_FILE,
@@ -52,4 +86,5 @@ char *x11_filechooser(const char *start_path,
                       FCMode mode,
                       const char *help_text);
 
-#endif // FILEMANAGER_XLIB_H
+
+#endif // XFILESELECT_H
