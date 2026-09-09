@@ -47,11 +47,11 @@ static char *fc_strdup(const char *s)  {
 // ----------------------------
 
 #ifndef FC_DEFAULT_WIDTH
-#define FC_DEFAULT_WIDTH        600
+#define FC_DEFAULT_WIDTH        500
 #endif
 
 #ifndef FC_DEFAULT_HEIGHT
-#define FC_DEFAULT_HEIGHT       500
+#define FC_DEFAULT_HEIGHT       300
 #endif
 
 #ifndef FC_FONT_NAME
@@ -72,11 +72,11 @@ static char *fc_strdup(const char *s)  {
 #endif
 
 #ifndef FC_LIST_FG_COLOR
-#define FC_LIST_FG_COLOR        "#444444"
+#define FC_LIST_FG_COLOR        "#666666"
 #endif
 
 #ifndef FC_LIST_SEL_BG_COLOR
-#define FC_LIST_SEL_BG_COLOR    "#444444"
+#define FC_LIST_SEL_BG_COLOR    "#666666"
 #endif
 
 #ifndef FC_LIST_SEL_FG_COLOR
@@ -92,15 +92,15 @@ static char *fc_strdup(const char *s)  {
 #endif
 
 #ifndef FC_SEPARATOR_COLOR
-#define FC_SEPARATOR_COLOR      "#444444"
+#define FC_SEPARATOR_COLOR      "#666666"
 #endif
 
 #ifndef FC_HEADER_PADDING_Y
-#define FC_HEADER_PADDING_Y     4
+#define FC_HEADER_PADDING_Y     10
 #endif
 
 #ifndef FC_STATUS_PADDING_Y
-#define FC_STATUS_PADDING_Y     4
+#define FC_STATUS_PADDING_Y     10
 #endif
 
 #ifndef FC_LINE_EXTRA
@@ -282,7 +282,6 @@ static int fc_init(FCContext *fc, const char *start_path,
     XSelectInput(fc->dpy, fc->win,
                  ExposureMask | KeyPressMask |
                  ButtonPressMask | StructureNotifyMask);
-    XMapWindow(fc->dpy, fc->win);
     
     fc_set_window_icon(fc->dpy, fc->win);
 
@@ -320,6 +319,10 @@ static int fc_init(FCContext *fc, const char *start_path,
 	fc->status_fg     = fc_alloc_color(fc->dpy, screen,
                              FC_STATUS_FG_COLOR,
                              BlackPixel(fc->dpy, screen));
+                             
+    XSetWindowBackground(fc->dpy, fc->win, fc->list_bg);
+                             
+    XMapWindow(fc->dpy, fc->win);
 
     fc->font = XLoadQueryFont(fc->dpy, FC_FONT_NAME);
     if (fc->font) {
@@ -443,6 +446,12 @@ static void fc_draw(FCContext *fc) {
         if (fc->selected >= fc->file_count)
             fc->selected = fc->file_count - 1;
     }
+    
+    int screen = DefaultScreen(fc->dpy);
+                                          
+    unsigned long sep_color = fc_alloc_color(fc->dpy, screen ,
+                             FC_SEPARATOR_COLOR,
+                             WhitePixel(fc->dpy, screen));                                       
 
     // Draw header (if any)
     if (header_height > 0) {
@@ -453,6 +462,11 @@ static void fc_draw(FCContext *fc) {
         XDrawString(fc->dpy, fc->win, fc->gc,
                     10, line_height + 2,
                     fc->header_text, strlen(fc->header_text));
+
+        // Separator between header and file area
+        XSetForeground(fc->dpy, fc->gc, sep_color);
+        XFillRectangle(fc->dpy, fc->win, fc->gc,
+                       0, header_height - 1, fc->width, 1);           
     }
 
     int list_y_start = header_height;
@@ -471,8 +485,8 @@ static void fc_draw(FCContext *fc) {
             XSetForeground(fc->dpy, fc->gc, fc->list_sel_fg);
         } else {
             XSetForeground(fc->dpy, fc->gc, fc->list_bg);
-            // Optionally clear background per line; not strictly needed
-            // since we cleared the whole window already.
+            /*XFillRectangle(fc->dpy, fc->win, fc->gc,
+                   0, y - line_height + 2, fc->width, line_height);*/
             XSetForeground(fc->dpy, fc->gc, fc->list_fg);
         }
 
@@ -499,10 +513,14 @@ static void fc_draw(FCContext *fc) {
                     FC_INFO_TEXT_X, y,
                     info, strlen(info));
     }
+    
+    // Separator between file area and status
+    int status_y = fc->height - status_line_height;
+    XSetForeground(fc->dpy, fc->gc, sep_color);
+    XFillRectangle(fc->dpy, fc->win, fc->gc,
+                   0, status_y - 1, fc->width, 1);
 
     // Draw status line
-    int status_y = fc->height - status_line_height;
-
     XSetForeground(fc->dpy, fc->gc, fc->status_bg);
     XFillRectangle(fc->dpy, fc->win, fc->gc,
                    0, status_y, fc->width, status_line_height);
@@ -744,4 +762,3 @@ int main(void) {
     return 0;
 }
 #endif
-
