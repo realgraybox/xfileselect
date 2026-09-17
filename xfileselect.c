@@ -127,6 +127,7 @@ typedef struct {
     Window win;
     GC gc;
     XFontStruct *font;
+    Pixmap back_pixmap;
 
     int width;
     int height;
@@ -269,6 +270,10 @@ static int fc_init(FCContext *fc, const char *start_path,
                                   1,
                                   BlackPixel(fc->dpy, screen),
                                   WhitePixel(fc->dpy, screen));
+                                  
+    fc->back_pixmap = XCreatePixmap(fc->dpy, fc->win,
+                                fc->width, fc->height,
+                                DefaultDepth(fc->dpy, screen));
 
     if (title) {
         strncpy(fc->title, title, sizeof(fc->title) - 1);
@@ -423,7 +428,13 @@ static void fc_load_files(FCContext *fc, const char *path) {
 }
 
 static void fc_draw(FCContext *fc) {
-    XClearWindow(fc->dpy, fc->win);
+    //XClearWindow(fc->dpy, fc->win);
+    Drawable d = fc->back_pixmap;
+
+    // Fill background
+    XSetForeground(fc->dpy, fc->gc, fc->list_bg);
+    XFillRectangle(fc->dpy, d, fc->gc, 0, 0, fc->width, fc->height);
+    
 
     int line_height = fc->line_height;
     int header_height = (fc->header_text[0] != '\0')
@@ -456,16 +467,16 @@ static void fc_draw(FCContext *fc) {
     // Draw header (if any)
     if (header_height > 0) {
         XSetForeground(fc->dpy, fc->gc, fc->header_bg);
-        XFillRectangle(fc->dpy, fc->win, fc->gc,
+        XFillRectangle(fc->dpy, d, fc->gc,
                        0, 0, fc->width, header_height);
         XSetForeground(fc->dpy, fc->gc, fc->header_fg);
-        XDrawString(fc->dpy, fc->win, fc->gc,
+        XDrawString(fc->dpy, d, fc->gc,
                     10, line_height + 2,
                     fc->header_text, strlen(fc->header_text));
 
         // Separator between header and file area
         XSetForeground(fc->dpy, fc->gc, sep_color);
-        XFillRectangle(fc->dpy, fc->win, fc->gc,
+        XFillRectangle(fc->dpy, d, fc->gc,
                        0, header_height - 1, fc->width, 1);           
     }
 
@@ -480,12 +491,12 @@ static void fc_draw(FCContext *fc) {
 
         if (file_index == fc->selected) {
             XSetForeground(fc->dpy, fc->gc, fc->list_sel_bg);
-            XFillRectangle(fc->dpy, fc->win, fc->gc,
+            XFillRectangle(fc->dpy, d, fc->gc,
                            0, y - line_height + 2, fc->width, line_height);
             XSetForeground(fc->dpy, fc->gc, fc->list_sel_fg);
         } else {
             XSetForeground(fc->dpy, fc->gc, fc->list_bg);
-            /*XFillRectangle(fc->dpy, fc->win, fc->gc,
+            /*XFillRectangle(fc->dpy, d, fc->gc,
                    0, y - line_height + 2, fc->width, line_height);*/
             XSetForeground(fc->dpy, fc->gc, fc->list_fg);
         }
@@ -505,11 +516,11 @@ static void fc_draw(FCContext *fc) {
             snprintf(info, sizeof(info), "?");
         }
 
-        XDrawString(fc->dpy, fc->win, fc->gc,
+        XDrawString(fc->dpy, d, fc->gc,
                     FC_FILE_TEXT_X, y,
                     fc->files[file_index],
                     strlen(fc->files[file_index]));
-        XDrawString(fc->dpy, fc->win, fc->gc,
+        XDrawString(fc->dpy, d, fc->gc,
                     FC_INFO_TEXT_X, y,
                     info, strlen(info));
     }
@@ -517,18 +528,23 @@ static void fc_draw(FCContext *fc) {
     // Separator between file area and status
     int status_y = fc->height - status_line_height;
     XSetForeground(fc->dpy, fc->gc, sep_color);
-    XFillRectangle(fc->dpy, fc->win, fc->gc,
+    XFillRectangle(fc->dpy, d, fc->gc,
                    0, status_y - 1, fc->width, 1);
 
     // Draw status line
     XSetForeground(fc->dpy, fc->gc, fc->status_bg);
-    XFillRectangle(fc->dpy, fc->win, fc->gc,
+    XFillRectangle(fc->dpy, d, fc->gc,
                    0, status_y, fc->width, status_line_height);
     XSetForeground(fc->dpy, fc->gc, fc->status_fg);
 
-    XDrawString(fc->dpy, fc->win, fc->gc,
+    XDrawString(fc->dpy, d, fc->gc,
                 10, fc->height - 6,
                 fc->help_text, strlen(fc->help_text));
+                
+    // Finally copy to window
+    XCopyArea(fc->dpy, d, fc->win, fc->gc,
+              0, 0, fc->width, fc->height, 0, 0);
+    XFlush(fc->dpy);
 }
 
 static void fc_handle_key(FCContext *fc, XKeyEvent *ev) {
@@ -688,6 +704,14 @@ static void fc_run(FCContext *fc) {
         } else if (ev.type == ConfigureNotify) {
             fc->width  = ev.xconfigure.width;
             fc->height = ev.xconfigure.height;
+            
+            if (fc->back_pixmap) {
+				XFreePixmap(fc->dpy, fc->back_pixmap);
+			}
+			fc->back_pixmap = XCreatePixmap(fc->dpy, fc->win,
+											fc->width, fc->height,
+											DefaultDepth(fc->dpy, DefaultScreen(fc->dpy)));
+            
             fc_draw(fc);
 
             int line_height = fc->line_height;
@@ -711,6 +735,11 @@ static void fc_cleanup(FCContext *fc) {
         free(fc->files[i]);
     }
     fc->file_count = 0;
+    
+    if (fc->back_pixmap) {
+		XFreePixmap(fc->dpy, fc->back_pixmap);
+		fc->back_pixmap = None;
+	}
 
     if (fc->font) XFreeFont(fc->dpy, fc->font);
     XFreeGC(fc->dpy, fc->gc);
