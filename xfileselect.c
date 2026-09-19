@@ -23,6 +23,7 @@
 #include "xfileselect.h"
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 #include <X11/keysym.h>
 #include <dirent.h>
 #include <stdlib.h>
@@ -128,6 +129,7 @@ typedef struct {
     GC gc;
     XFontStruct *font;
     Pixmap back_pixmap;
+    Atom wm_delete_window;
 
     int width;
     int height;
@@ -289,6 +291,10 @@ static int fc_init(FCContext *fc, const char *start_path,
                  ButtonPressMask | StructureNotifyMask);
     
     fc_set_window_icon(fc->dpy, fc->win);
+    
+    // --- NEW CODE: Tell X11 that we want to handle the close button (X) ourselves ---
+	fc->wm_delete_window = XInternAtom(fc->dpy, "WM_DELETE_WINDOW", False);
+	XSetWMProtocols(fc->dpy, fc->win, &fc->wm_delete_window, 1);
 
     fc->gc = XCreateGC(fc->dpy, fc->win, 0, NULL);
 
@@ -671,11 +677,18 @@ static void fc_handle_click(FCContext *fc, XButtonEvent *ev) {
 
 static void fc_run(FCContext *fc) {
     fc_draw(fc);
-
+	
     XEvent ev;
     while (!fc->done) {
         XNextEvent(fc->dpy, &ev);
-
+        
+        // Allows the game to be closed using the window's "X" button with the mouse.
+		if (ev.type == ClientMessage) {
+			if ((Atom)ev.xclient.data.l[0] == fc->wm_delete_window) {
+				fc->done = 1;
+				fc->canceled = 1;
+			}
+		}
         if (ev.type == Expose) {
             fc_draw(fc);
         } else if (ev.type == KeyPress) {
