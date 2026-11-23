@@ -3,7 +3,9 @@
 // Override visual defaults BEFORE including filemanager_xlib.c
 #define FC_DEFAULT_WIDTH   400
 #define FC_DEFAULT_HEIGHT  300
-#define FC_FONT_NAME       "fixed"
+// Text font: any xbmfont font; this is the default, which looks like X's "fixed"
+#include "fonts/xbf_fixed_6x13.h"
+#define FC_FONT            xbf_fixed_6x13
 #define FC_HEADER_PADDING_Y     10
 #define FC_STATUS_PADDING_Y     10
 
@@ -18,7 +20,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(void) {
+int main(int argc, char **argv) {
+    // "./example_main 2": the same font scaled x2, window and columns follow
+    if (argc > 1)
+        x11_filechooser_font(&xbf_fixed_6x13, atoi(argv[1]));
+
     char *path = x11_filechooser(
         "/home/user",                 // start_path
         "My App – Open File",         // title (WM)

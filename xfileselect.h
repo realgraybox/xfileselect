@@ -32,7 +32,9 @@
  *
  *     #define FC_DEFAULT_WIDTH   400
  *     #define FC_DEFAULT_HEIGHT  500
- *     #define FC_FONT_NAME       "fixed"
+ *     #include "fonts/xbf_fixed_10x20.h"   // text font (xbmfont); default 6x13
+ *     #define FC_FONT            xbf_fixed_10x20
+ *     #define FC_FONT_SCALE      1             // whole-number scaling
  *
  *     // Colors must be in X11 "#RRGGBB" format (e.g. "#222222").
  *     #define FC_HEADER_BG_COLOR      "#222222"
@@ -56,6 +58,8 @@
  *   must be in X11 string format: "#RRGGBB" (e.g. "#222222").
  *   Using "0xRRGGBB" or other formats is not supported.
  */
+
+#include "xbmfont.h"
 
 typedef enum {
     FC_MODE_FILE,
@@ -85,6 +89,13 @@ char *x11_filechooser(const char *start_path,
                       const char *filter_ext,
                       FCMode mode,
                       const char *help_text);
+
+/*
+ * Font for the dialogs opened from now on, e.g. to match the program's own
+ * text size on a large screen; NULL = the compiled-in FC_FONT. The window
+ * size, paddings and columns grow in step with the font's line height.
+ */
+void x11_filechooser_font(const xbf_font *font, int scale);
 
 
 #endif // XFILESELECT_H
